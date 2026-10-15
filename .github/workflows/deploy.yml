@@ -118,11 +118,13 @@ jobs:
               -o jsonpath='{.items[-1:].metadata.name}' 2>/dev/null || true)
 
             if [ -n "$HEAD" ]; then
-              if kubectl -n "$NAMESPACE" exec "$HEAD" -- \
-                curl -sf --max-time 30 localhost:8000/generate \
-                -H 'Content-Type: application/json' \
-                -d '{"prompt":"Hello","max_new_tokens":8}' \
-                | grep -q '"text"'; then
+              if kubectl -n "$NAMESPACE" exec "$HEAD" -c ray-head -- python -c '
+          import json, urllib.request as u
+          r = u.Request("http://localhost:8000/generate",
+                        json.dumps({"prompt": "Hello", "max_new_tokens": 8}).encode(),
+                        {"Content-Type": "application/json"})
+          print(u.urlopen(r, timeout=30).read().decode())
+          ' | grep -q '"text"'; then
                 echo "smoke test OK"
                 exit 0
               fi
