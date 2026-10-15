@@ -2,22 +2,38 @@ import os
 import time
 import uuid
 
+# ============================================================
+# Environment configuration (must be set BEFORE any import)
+# ============================================================
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["MKL_NUM_THREADS"] = "2"
-os.environ["VLLM_CPU_KVCACHE_SPACE"] = "1"  # 1 GiB KV cache
+os.environ["VLLM_CPU_KVCACHE_SPACE"] = "2"
 
+# Force offline mode — the model is already inside the image
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
+# ============================================================
+# Imports
+# ============================================================
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from ray import serve
 from transformers import AutoTokenizer
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 
-MODEL_PATH = os.getenv("MODEL_PATH", "Qwen/Qwen2.5-0.5B-Instruct")
+# ============================================================
+# Model configuration
+# ============================================================
+MODEL_PATH = os.getenv("MODEL_PATH", "/home/ray/models/qwen")
 MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 
 api = FastAPI()
 
 
+# ============================================================
+# Request schemas
+# ============================================================
 class GenerateRequest(BaseModel):
     prompt: str
     max_new_tokens: int = Field(64, ge=1, le=64)
@@ -34,29 +50,38 @@ class ChatRequest(BaseModel):
     max_tokens: int = 128
 
 
+# ============================================================
+# Ray Serve deployment
+# ============================================================
 @serve.deployment(
     num_replicas=1,
     ray_actor_options={"num_cpus": 2},
-    max_ongoing_requests=4,   
+    max_ongoing_requests=4,
 )
 @serve.ingress(api)
 class LLMService:
     def __init__(self):
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+        # Load tokenizer from local files only (no internet)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_PATH,
+            local_files_only=True,
+        )
+
+        # Initialize vLLM engine with memory-friendly settings
         self.engine = AsyncLLMEngine.from_engine_args(
             AsyncEngineArgs(
                 model=MODEL_PATH,
+                tokenizer=MODEL_PATH,
                 dtype="float16",
-                swap_space=0,            # 0B swap
-                enforce_eager=True,      # overhead
-                max_model_len=2048,      # KV cache
+                swap_space=0,             # do not reserve disk swap
+                enforce_eager=True,       # reduce memory overhead
+                max_model_len=2048,       # keep KV cache small
                 disable_log_stats=True,
-                # اگر روی CPU هستید:
-                device="cpu",
+                trust_remote_code=True,
             )
         )
 
-    async def _generate(self, prompt, max_tokens):
+    async def _generate(self, prompt: str, max_tokens: int):
         params = SamplingParams(max_tokens=max_tokens, temperature=0.7)
         final = None
         async for out in self.engine.generate(prompt, params, uuid.uuid4().hex):
@@ -72,7 +97,8 @@ class LLMService:
     async def chat(self, req: ChatRequest):
         prompt = self.tokenizer.apply_chat_template(
             [m.model_dump() for m in req.messages],
-            tokenize=False, add_generation_prompt=True,
+            tokenize=False,
+            add_generation_prompt=True,
         )
         result = await self._generate(prompt, req.max_tokens)
         return {
@@ -80,11 +106,16 @@ class LLMService:
             "object": "chat.completion",
             "created": int(time.time()),
             "model": MODEL_NAME,
-            "choices": [{
-                "index": 0,
-                "message": {"role": "assistant", "content": result.text},
-                "finish_reason": result.finish_reason,
-            }],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": result.text,
+                    },
+                    "finish_reason": result.finish_reason,
+                }
+            ],
         }
 
 

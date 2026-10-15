@@ -32,7 +32,6 @@ RUN git clone --depth 1 --branch "${VLLM_REF}" \
 WORKDIR /tmp/vllm
 
 # Install build-time dependencies.
-# They must be installed manually because we build with --no-build-isolation.
 RUN python -m pip install --no-cache-dir \
     -r requirements/build.txt \
     --extra-index-url https://download.pytorch.org/whl/cpu
@@ -56,9 +55,22 @@ RUN mkdir -p /wheels && \
 # ==================================================
 FROM python:3.11-slim AS model
 
-# Download the model once at build time so the runtime image works offline
-RUN pip install --no-cache-dir huggingface_hub \
-    && python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen2.5-0.5B-Instruct', local_dir='/models/qwen')"
+# Install git + git-lfs for reliable model download (better for CI/CD)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    git-lfs \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Initialize Git LFS
+RUN git lfs install
+
+# Download the model using git clone (more reliable in GitHub Actions)
+RUN git clone https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct /models/qwen
+
+# Remove .git directory to reduce image size
+RUN rm -rf /models/qwen/.git
+
 
 # ==================================================
 # Stage 3: Runtime image
@@ -73,7 +85,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the whole requirements directory from the builder stage.
-# cpu.txt includes "-r common.txt", so copying only cpu.txt is not enough.
 COPY --from=builder /tmp/vllm/requirements /tmp/vllm-requirements
 COPY --from=builder /wheels /tmp/wheels
 
@@ -103,11 +114,15 @@ COPY --chown=ray:users serve_app.py /home/ray/app/serve_app.py
 # - PYTHONPATH: lets Python import serve_app
 # - MODEL_PATH: local path of the model
 # - HF_HUB_OFFLINE: never try to download from Hugging Face at runtime
+# - TRANSFORMERS_OFFLINE: same as above, for transformers library
 # - VLLM_CPU_KVCACHE_SPACE: KV cache size in GiB
 ENV PYTHONPATH=/home/ray/app \
     MODEL_PATH=/home/ray/models/qwen \
     HF_HUB_OFFLINE=1 \
-    VLLM_CPU_KVCACHE_SPACE=2
+    TRANSFORMERS_OFFLINE=1 \
+    VLLM_CPU_KVCACHE_SPACE=2 \
+    OMP_NUM_THREADS=2 \
+    MKL_NUM_THREADS=2
 
 WORKDIR /home/ray/app
 
