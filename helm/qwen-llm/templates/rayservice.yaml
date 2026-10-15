@@ -6,18 +6,22 @@ metadata:
 spec:
   serviceUnhealthySecondThreshold: 900
   deploymentUnhealthySecondThreshold: 900
+
   serveConfigV2: |
     applications:
       - name: llm
         import_path: serve_app:llm_app
         route_prefix: /
+
   rayClusterConfig:
     rayVersion: {{ .Values.rayVersion | quote }}
+
     headGroupSpec:
       rayStartParams:
         dashboard-host: "0.0.0.0"
         num-cpus: "0"
         metrics-export-port: "8080"
+
       template:
         spec:
           {{- with .Values.imagePullSecrets }}
@@ -36,13 +40,16 @@ spec:
                 - { containerPort: 10001, name: client }
                 - { containerPort: 8000, name: serve }
                 - { containerPort: 8080, name: metrics }
+
     workerGroupSpecs:
       - groupName: cpu-workers
         replicas: {{ .Values.worker.replicas }}
         minReplicas: {{ .Values.worker.replicas }}
         maxReplicas: {{ .Values.worker.replicas }}
+
         rayStartParams:
           metrics-export-port: "8080"
+
         template:
           spec:
             {{- with .Values.imagePullSecrets }}
@@ -58,7 +65,8 @@ spec:
                 ports:
                   - { containerPort: 8080, name: metrics }
                 volumeMounts:
-                  - { name: shm, mountPath: /dev/shm }
+                  - name: shm
+                    mountPath: /dev/shm
             volumes:
               - name: shm
                 emptyDir:

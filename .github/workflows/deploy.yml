@@ -6,91 +6,133 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 env:
-  IMAGE: ${{ vars.REGISTRY }}/qwen-serve
+  IMAGE: docker.io/akbar1370/platform
   NAMESPACE: ai-inference
   RELEASE: qwen-llm
 
 jobs:
   lint:
+    name: Lint and Validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
-      - run: python -m py_compile app/serve_app.py
-      - run: helm lint helm/qwen-llm
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+      - name: Validate Python syntax
+        run: python -m py_compile app/serve_app.py
+      - name: Lint Helm chart
+        run: helm lint helm/qwen-llm
 
   build:
+    name: Build and Push Image
     needs: lint
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          registry: ${{ vars.REGISTRY }}
+          registry: docker.io
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
-      - uses: docker/build-push-action@v6
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
         with:
-          context: app
+          context: ./app
           push: true
-          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   deploy:
+    name: Deploy to Kubernetes
     needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       TARGET: ${{ secrets.SSH_USER }}@${{ secrets.MASTER_HOST }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup SSH
         env:
           SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          MASTER_HOST: ${{ secrets.MASTER_HOST }}
         run: |
+          set -eu
           mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.MASTER_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$MASTER_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Copy chart to master
         run: |
-          ssh $TARGET "rm -rf /tmp/qwen-llm"
-          scp -r helm/qwen-llm $TARGET:/tmp/qwen-llm
+          set -eu
+          ssh "$TARGET" 'rm -rf /tmp/qwen-llm'
+          scp -r helm/qwen-llm "$TARGET:/tmp/qwen-llm"
 
       - name: Deploy on master
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          ssh $TARGET bash -s <<EOF
-          set -e
-          kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n $NAMESPACE create secret docker-registry regcred \
-            --docker-server='${{ vars.REGISTRY }}' \
-            --docker-username='${{ secrets.REGISTRY_USERNAME }}' \
-            --docker-password='${{ secrets.REGISTRY_PASSWORD }}' \
+          set -eu
+          ssh "$TARGET" \
+            "NAMESPACE='$NAMESPACE' RELEASE='$RELEASE' IMAGE='$IMAGE' IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE'
+          set -eu
+          kubectl create namespace "$NAMESPACE" \
             --dry-run=client -o yaml | kubectl apply -f -
-          helm upgrade --install $RELEASE /tmp/qwen-llm \
-            -n $NAMESPACE \
-            --set image.repository=$IMAGE \
-            --set image.tag=${{ github.sha }} \
-            --set 'imagePullSecrets[0].name=regcred'
-          EOF
+          helm upgrade --install "$RELEASE" /tmp/qwen-llm \
+            --namespace "$NAMESPACE" \
+            --set-string image.repository="$IMAGE" \
+            --set-string image.tag="$IMAGE_TAG" \
+            --wait \
+            --timeout 20m
+          REMOTE
 
       - name: Smoke test
         run: |
-          ssh $TARGET "NAMESPACE=$NAMESPACE bash -s" <<'EOF'
+          ssh "$TARGET" "NAMESPACE='$NAMESPACE' bash -s" <<'EOF'
+          set -u
+
           for i in $(seq 1 90); do
-            HEAD=$(kubectl -n $NAMESPACE get pod -l ray.io/node-type=head \
-                   --sort-by=.metadata.creationTimestamp -o name | tail -1)
-            if kubectl -n $NAMESPACE exec $HEAD -- curl -sf localhost:8000/generate \
-                 -H 'Content-Type: application/json' \
-                 -d '{"prompt":"Hello","max_new_tokens":8}' | grep -q '"text"'; then
-              echo "smoke test OK"; exit 0
+            HEAD=$(kubectl -n "$NAMESPACE" get pod \
+              -l ray.io/node-type=head \
+              --sort-by=.metadata.creationTimestamp \
+              -o jsonpath='{.items[-1:].metadata.name}' 2>/dev/null || true)
+
+            if [ -n "$HEAD" ]; then
+              if kubectl -n "$NAMESPACE" exec "$HEAD" -- \
+                curl -sf --max-time 30 localhost:8000/generate \
+                -H 'Content-Type: application/json' \
+                -d '{"prompt":"Hello","max_new_tokens":8}' \
+                | grep -q '"text"'; then
+                echo "smoke test OK"
+                exit 0
+              fi
             fi
-            echo "waiting for service... ($i/90)"; sleep 20
+
+            echo "Waiting for inference service... ($i/90)"
+            sleep 20
           done
-          echo "smoke test FAILED"; exit 1
+
+          echo "smoke test FAILED"
+          kubectl -n "$NAMESPACE" get pods -o wide
+          exit 1
           EOF
