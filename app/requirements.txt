@@ -1,5 +1,5 @@
 fastapi
 pydantic
 transformers
-numpy<2
+pandas>=2.2.2
 ray[serve]==2.49.0
