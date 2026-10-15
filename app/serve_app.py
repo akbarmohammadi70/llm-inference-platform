@@ -7,7 +7,7 @@ import uuid
 # ============================================================
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["MKL_NUM_THREADS"] = "2"
-os.environ["VLLM_CPU_KVCACHE_SPACE"] = "2"
+os.environ["VLLM_CPU_KVCACHE_SPACE"] = "1"
 
 # Force offline mode — the model is already inside the image
 os.environ["HF_HUB_OFFLINE"] = "1"
@@ -36,7 +36,7 @@ api = FastAPI()
 # ============================================================
 class GenerateRequest(BaseModel):
     prompt: str
-    max_new_tokens: int = Field(64, ge=1, le=64)
+    max_new_tokens: int = Field(64, ge=1, le=32)
 
 
 class Message(BaseModel):
@@ -47,7 +47,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     model: str = MODEL_NAME
     messages: list[Message]
-    max_tokens: int = 128
+    max_tokens: int = 64
 
 
 # ============================================================
@@ -78,7 +78,7 @@ class LLMService:
                 dtype="float16",
                 swap_space=0,
                 enforce_eager=True,
-                max_model_len=1024,          
+                max_model_len=512,          
                 disable_log_stats=True,
                 trust_remote_code=True,
                 gpu_memory_utilization=0.1,
