@@ -9,15 +9,15 @@ rayVersion: "2.49.0"
 
 head:
   resources:
-    requests: { cpu: "1", memory: 2Gi }
+    requests: { cpu: "2", memory: 3Gi }
     limits:   { cpu: "2", memory: 4Gi }
 
 worker:
   replicas: 1
-  shmSize: 2Gi
+  shmSize: 1Gi
   resources:                # cpu  >= num_cpus in serve_app.py 
-    requests: { cpu: "2", memory: 4Gi }
-    limits:   { cpu: "2", memory: 6Gi }
+    requests: { cpu: "2", memory: 2Gi }
+    limits:   { cpu: "2", memory: 3Gi }
 
 service:
   nodePort: 30800

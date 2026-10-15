@@ -19,7 +19,7 @@ spec:
     headGroupSpec:
       rayStartParams:
         dashboard-host: "0.0.0.0"
-        num-cpus: "0"
+        num-cpus: "2"
         metrics-export-port: "8080"
 
       template:
@@ -49,7 +49,7 @@ spec:
 
         rayStartParams:
           metrics-export-port: "8080"
-
+          num-cpus: "2" 
         template:
           spec:
             {{- with .Values.imagePullSecrets }}
@@ -64,6 +64,26 @@ spec:
                   {{- toYaml .Values.worker.resources | nindent 18 }}
                 ports:
                   - { containerPort: 8080, name: metrics }
+                readinessProbe:
+                  exec:
+                    command:
+                      - bash
+                      - -c
+                      - "wget --tries 1 -T 2 -q -O- http://localhost:52365/api/local_raylet_healthz | grep success"
+                  initialDelaySeconds: 10
+                  periodSeconds: 5
+                  timeoutSeconds: 2
+                  failureThreshold: 3
+                livenessProbe:
+                  exec:
+                    command:
+                      - bash
+                      - -c
+                      - "wget --tries 1 -T 2 -q -O- http://localhost:52365/api/local_raylet_healthz | grep success"
+                  initialDelaySeconds: 30
+                  periodSeconds: 5
+                  timeoutSeconds: 2
+                  failureThreshold: 120
                 volumeMounts:
                   - name: shm
                     mountPath: /dev/shm
