@@ -2,9 +2,9 @@ name: ci-cd
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 permissions:
   contents: read
@@ -31,7 +31,7 @@ jobs:
   build:
     name: Build and Push Image
     needs: lint
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -59,7 +59,7 @@ jobs:
   deploy:
     name: Deploy to Kubernetes
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     env:
       TARGET: ${{ secrets.SSH_USER }}@${{ secrets.MASTER_HOST }}
