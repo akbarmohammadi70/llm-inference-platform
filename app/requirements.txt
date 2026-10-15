@@ -1,5 +1,5 @@
 fastapi
 pydantic
-transformers
+transformers==4.57.1
 pandas>=2.2.2
 ray[serve]==2.49.0
