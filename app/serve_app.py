@@ -2,6 +2,10 @@ import os
 import time
 import uuid
 
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["MKL_NUM_THREADS"] = "2"
+os.environ["VLLM_CPU_KVCACHE_SPACE"] = "1"  # 1 GiB KV cache
+
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from ray import serve
@@ -16,7 +20,7 @@ api = FastAPI()
 
 class GenerateRequest(BaseModel):
     prompt: str
-    max_new_tokens: int = Field(64, ge=1, le=64)  
+    max_new_tokens: int = Field(64, ge=1, le=64)
 
 
 class Message(BaseModel):
@@ -30,13 +34,26 @@ class ChatRequest(BaseModel):
     max_tokens: int = 128
 
 
-@serve.deployment(num_replicas=1, ray_actor_options={"num_cpus": 2})
+@serve.deployment(
+    num_replicas=1,
+    ray_actor_options={"num_cpus": 2},
+    max_ongoing_requests=4,   
+)
 @serve.ingress(api)
 class LLMService:
     def __init__(self):
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
         self.engine = AsyncLLMEngine.from_engine_args(
-            AsyncEngineArgs(model=MODEL_PATH)
+            AsyncEngineArgs(
+                model=MODEL_PATH,
+                dtype="float16",
+                swap_space=0,            # 0B swap
+                enforce_eager=True,      # overhead
+                max_model_len=2048,      # KV cache
+                disable_log_stats=True,
+                # اگر روی CPU هستید:
+                device="cpu",
+            )
         )
 
     async def _generate(self, prompt, max_tokens):
