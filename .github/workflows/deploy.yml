@@ -98,6 +98,11 @@ jobs:
           set -eu
           kubectl create namespace "$NAMESPACE" \
             --dry-run=client -o yaml | kubectl apply -f -
+          
+          helm uninstall "$RELEASE" --namespace "$NAMESPACE" --wait || true
+          kubectl -n "$NAMESPACE" wait --for=delete pod \
+            -l ray.io/is-ray-node=yes --timeout=5m || true
+
           helm upgrade --install "$RELEASE" /tmp/qwen-llm \
             --namespace "$NAMESPACE" \
             --set-string image.repository="$IMAGE" \
@@ -140,4 +145,3 @@ jobs:
           EOF
 
 
-          
