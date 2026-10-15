@@ -57,6 +57,9 @@ class ChatRequest(BaseModel):
     num_replicas=1,
     ray_actor_options={"num_cpus": 2},
     max_ongoing_requests=4,
+    graceful_shutdown_timeout_s=0,
+    health_check_period_s=30,
+    health_check_timeout_s=30,
 )
 @serve.ingress(api)
 class LLMService:
@@ -73,12 +76,14 @@ class LLMService:
                 model=MODEL_PATH,
                 tokenizer=MODEL_PATH,
                 dtype="float16",
-                swap_space=0,             # do not reserve disk swap
-                enforce_eager=True,       # reduce memory overhead
-                max_model_len=2048,       # keep KV cache small
+                swap_space=0,
+                enforce_eager=True,
+                max_model_len=1024,          
                 disable_log_stats=True,
                 trust_remote_code=True,
-            )
+                gpu_memory_utilization=0.1,
+                block_size=16,
+             )
         )
 
     async def _generate(self, prompt: str, max_tokens: int):

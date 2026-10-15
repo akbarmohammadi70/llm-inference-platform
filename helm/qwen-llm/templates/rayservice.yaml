@@ -4,8 +4,8 @@ metadata:
   name: {{ .Release.Name }}
   namespace: {{ .Release.Namespace }}
 spec:
-  serviceUnhealthySecondThreshold: 900
-  deploymentUnhealthySecondThreshold: 900
+  serviceUnhealthySecondThreshold: 1800
+  deploymentUnhealthySecondThreshold: 1800
 
   serveConfigV2: |
     applications:
