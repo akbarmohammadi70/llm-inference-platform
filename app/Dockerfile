@@ -60,7 +60,6 @@ FROM python:3.11-slim AS model
 RUN pip install --no-cache-dir huggingface_hub \
     && python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen2.5-0.5B-Instruct', local_dir='/models/qwen')"
 
-
 # ==================================================
 # Stage 3: Runtime image
 # ==================================================
@@ -73,16 +72,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnuma1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the vLLM requirements file and the built wheel from the builder stage
-COPY --from=builder /tmp/vllm/requirements/cpu.txt /tmp/cpu.txt
+# Copy the whole requirements directory from the builder stage.
+# cpu.txt includes "-r common.txt", so copying only cpu.txt is not enough.
+COPY --from=builder /tmp/vllm/requirements /tmp/vllm-requirements
 COPY --from=builder /wheels /tmp/wheels
 
 # Install vLLM runtime dependencies first, then the vLLM wheel itself
 RUN python -m pip install --no-cache-dir \
-    -r /tmp/cpu.txt \
+    -r /tmp/vllm-requirements/cpu.txt \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     && python -m pip install --no-cache-dir --no-deps /tmp/wheels/vllm-*.whl \
-    && rm -rf /tmp/wheels /tmp/cpu.txt
+    && rm -rf /tmp/wheels /tmp/vllm-requirements
 
 # Install application dependencies (and Ray Serve)
 COPY requirements.txt /tmp/requirements.txt
