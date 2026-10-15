@@ -138,3 +138,6 @@ jobs:
           kubectl -n "$NAMESPACE" get pods -o wide
           exit 1
           EOF
+
+
+          
