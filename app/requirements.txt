@@ -1,0 +1,4 @@
+fastapi
+pydantic
+transformers
+ray[serve]==2.49.0
