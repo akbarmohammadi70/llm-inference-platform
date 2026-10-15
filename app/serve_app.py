@@ -30,7 +30,7 @@ class ChatRequest(BaseModel):
     max_tokens: int = 128
 
 
-@serve.deployment(num_replicas=1, ray_actor_options={"num_cpus": 3})
+@serve.deployment(num_replicas=1, ray_actor_options={"num_cpus": 2})
 @serve.ingress(api)
 class LLMService:
     def __init__(self):

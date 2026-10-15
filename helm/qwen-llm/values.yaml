@@ -16,8 +16,8 @@ worker:
   replicas: 1
   shmSize: 2Gi
   resources:                # cpu  >= num_cpus in serve_app.py 
-    requests: { cpu: "3", memory: 4Gi }
-    limits:   { cpu: "3", memory: 6Gi }
+    requests: { cpu: "2", memory: 4Gi }
+    limits:   { cpu: "2", memory: 6Gi }
 
 service:
   nodePort: 30800
