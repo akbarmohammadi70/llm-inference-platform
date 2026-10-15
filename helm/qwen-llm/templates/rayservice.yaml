@@ -1,0 +1,66 @@
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  serviceUnhealthySecondThreshold: 900
+  deploymentUnhealthySecondThreshold: 900
+  serveConfigV2: |
+    applications:
+      - name: llm
+        import_path: serve_app:llm_app
+        route_prefix: /
+  rayClusterConfig:
+    rayVersion: {{ .Values.rayVersion | quote }}
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+        num-cpus: "0"
+        metrics-export-port: "8080"
+      template:
+        spec:
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: ray-head
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              resources:
+                {{- toYaml .Values.head.resources | nindent 16 }}
+              ports:
+                - { containerPort: 6379, name: gcs }
+                - { containerPort: 8265, name: dashboard }
+                - { containerPort: 10001, name: client }
+                - { containerPort: 8000, name: serve }
+                - { containerPort: 8080, name: metrics }
+    workerGroupSpecs:
+      - groupName: cpu-workers
+        replicas: {{ .Values.worker.replicas }}
+        minReplicas: {{ .Values.worker.replicas }}
+        maxReplicas: {{ .Values.worker.replicas }}
+        rayStartParams:
+          metrics-export-port: "8080"
+        template:
+          spec:
+            {{- with .Values.imagePullSecrets }}
+            imagePullSecrets:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+            containers:
+              - name: ray-worker
+                image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+                imagePullPolicy: {{ .Values.image.pullPolicy }}
+                resources:
+                  {{- toYaml .Values.worker.resources | nindent 18 }}
+                ports:
+                  - { containerPort: 8080, name: metrics }
+                volumeMounts:
+                  - { name: shm, mountPath: /dev/shm }
+            volumes:
+              - name: shm
+                emptyDir:
+                  medium: Memory
+                  sizeLimit: {{ .Values.worker.shmSize }}

@@ -1,0 +1,13 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: {{ .Release.Name }}-ray
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      ray.io/is-ray-node: "yes"
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

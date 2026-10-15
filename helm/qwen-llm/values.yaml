@@ -1,0 +1,23 @@
+image:
+  repository: registry.example.com/qwen-serve  
+  tag: "0.1.0"                                 
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []       
+
+rayVersion: "2.49.0"      
+
+head:
+  resources:
+    requests: { cpu: "1", memory: 2Gi }
+    limits:   { cpu: "2", memory: 4Gi }
+
+worker:
+  replicas: 1
+  shmSize: 2Gi
+  resources:                # cpu  >= num_cpus in serve_app.py 
+    requests: { cpu: "4", memory: 6Gi }
+    limits:   { cpu: "4", memory: 8Gi }
+
+service:
+  nodePort: 30800

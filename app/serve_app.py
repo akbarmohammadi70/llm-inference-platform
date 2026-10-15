@@ -1,0 +1,74 @@
+import os
+import time
+import uuid
+
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+from ray import serve
+from transformers import AutoTokenizer
+from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
+
+MODEL_PATH = os.getenv("MODEL_PATH", "Qwen/Qwen2.5-0.5B-Instruct")
+MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+
+api = FastAPI()
+
+
+class GenerateRequest(BaseModel):
+    prompt: str
+    max_new_tokens: int = Field(64, ge=1, le=64)  
+
+
+class Message(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    model: str = MODEL_NAME
+    messages: list[Message]
+    max_tokens: int = 128
+
+
+@serve.deployment(num_replicas=1, ray_actor_options={"num_cpus": 4})
+@serve.ingress(api)
+class LLMService:
+    def __init__(self):
+        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+        self.engine = AsyncLLMEngine.from_engine_args(
+            AsyncEngineArgs(model=MODEL_PATH)
+        )
+
+    async def _generate(self, prompt, max_tokens):
+        params = SamplingParams(max_tokens=max_tokens, temperature=0.7)
+        final = None
+        async for out in self.engine.generate(prompt, params, uuid.uuid4().hex):
+            final = out
+        return final.outputs[0]
+
+    @api.post("/generate")
+    async def generate(self, req: GenerateRequest):
+        result = await self._generate(req.prompt, req.max_new_tokens)
+        return {"text": result.text}
+
+    @api.post("/v1/chat/completions")
+    async def chat(self, req: ChatRequest):
+        prompt = self.tokenizer.apply_chat_template(
+            [m.model_dump() for m in req.messages],
+            tokenize=False, add_generation_prompt=True,
+        )
+        result = await self._generate(prompt, req.max_tokens)
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": MODEL_NAME,
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": result.text},
+                "finish_reason": result.finish_reason,
+            }],
+        }
+
+
+llm_app = LLMService.bind()
