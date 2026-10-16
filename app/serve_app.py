@@ -81,7 +81,6 @@ class LLMService:
                 max_model_len=512,          
                 disable_log_stats=True,
                 trust_remote_code=True,
-                gpu_memory_utilization=0.1,
                 block_size=16,
              )
         )
