@@ -2,7 +2,7 @@
 
 | Tool | Purpose | Areas of Assistance |
 |---|---|---|
-| Claude | Research and Development (R&D) | Exploring and developing Terraform-based Infrastructure as Code configurations |
+| Claude | Research and Development (R&D) | Exploring and developing Terraform-based Infrastructure as Code configurations | Ray/KubeRay troubleshooting (OOM diagnosis, resource sizing); review of the Serve application, Helm chart, and CI/CD workflow; load-test design and result analysis; documentation |
 | ChatGPT | Technical assistance and implementation review | Terraform troubleshooting, Kubernetes and Helm configuration, Ray Serve integration, CI/CD automation, and documentation |
 
 These tools were used to support engineering research and development. Their outputs were reviewed and adapted to the project's requirements rather than treated as authoritative or production-ready solutions.
