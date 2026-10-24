@@ -395,10 +395,6 @@ Recommended improvements include:
 - Testing backup and recovery procedures.
 - Adding load testing and inference performance benchmarks.
 
-## AI Usage
-
-See [`ai-usage.md`](ai-usage.md) for project-specific information about AI-assisted development.
-
 ## License
 
 No license is specified in this repository. Add a `LICENSE` file before distributing the project or explicitly granting reuse permissions.
